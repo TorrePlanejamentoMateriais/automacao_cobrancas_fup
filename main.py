@@ -10,31 +10,54 @@ import traceback
 
 import pandas as pd
 
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
-
-
 from utils.enviar_email import enviar_email_com_anexo
 from utils.destaca_coluna_excel import destacar_coluna_excel
 
 from utils.logs import (
-    ajustar_planilha_log,
     registrar_log,
     salvar_log_excel,
 )
 
 
-def executar_processamento(evento_parar=None, callback_log=None):
-    """Executa o processamento completo, com parada cooperativa entre fornecedores."""
+# ==========================================================
+# PROCESSAMENTO PRINCIPAL
+# ==========================================================
+
+def executar_processamento(
+    evento_parar=None,
+    callback_log=None,
+):
+    """
+    Executa o processamento completo.
+
+    O processamento possui parada cooperativa entre os
+    fornecedores quando executado por uma interface local.
+    """
 
     def parada_solicitada():
-        return bool(evento_parar is not None and evento_parar.is_set())
+        return bool(
+            evento_parar is not None
+            and evento_parar.is_set()
+        )
 
     def informar(mensagem):
+        """
+        Exibe a mensagem no terminal e, quando disponível,
+        também envia a mensagem para uma função de callback.
+        """
+
         print(mensagem)
 
+        if callback_log is not None:
+
+            try:
+                callback_log(mensagem)
+
+            except Exception:
+                pass
+
     # ==========================================================
-    # CONFIGURAÇÕES
+    # CONFIGURAÇÕES DE E-MAIL
     # ==========================================================
 
     # True:
@@ -50,7 +73,7 @@ def executar_processamento(evento_parar=None, callback_log=None):
     # Abre cada e-mail no Outlook para revisão.
     #
     # False:
-    # Envia o e-mail automaticamente.
+    # Envia o e-mail automaticamente pelo Outlook.
     #
     # Observação:
     # Quando estiver como True, o Python não consegue confirmar
@@ -62,12 +85,40 @@ def executar_processamento(evento_parar=None, callback_log=None):
     # transfere o prazo para segunda-feira.
     DIAS_PARA_RETORNO = 2
 
+    informar("")
+    informar("=" * 80)
+    informar("CONFIGURAÇÃO DA EXECUÇÃO")
+    informar("=" * 80)
+    informar(f"Modo de teste: {MODO_TESTE}")
 
+    if MODO_TESTE:
+        informar(f"Destinatário de teste: {EMAIL_TESTE}")
+        informar(
+            "ATENÇÃO: todos os e-mails serão direcionados "
+            "somente para o destinatário de teste."
+        )
+    else:
+        informar(
+            "MODO DE PRODUÇÃO ATIVO: os e-mails serão "
+            "enviados aos fornecedores cadastrados na base."
+        )
+
+    if EXIBIR_ANTES_DE_ENVIAR:
+        informar(
+            "Modo de revisão ativo: cada mensagem será "
+            "aberta no Outlook antes do envio."
+        )
+    else:
+        informar(
+            "Modo automático ativo: as mensagens serão "
+            "enviadas diretamente pelo Outlook."
+        )
+
+    informar("=" * 80)
 
     # ==========================================================
     # TRATAMENTO DE DATAS
     # ==========================================================
-
 
     def calcular_data_retorno(
         data_envio=None,
@@ -81,10 +132,6 @@ def executar_processamento(evento_parar=None, callback_log=None):
         Se o resultado cair:
         - no sábado, transfere para segunda-feira;
         - no domingo, transfere para segunda-feira.
-
-        Exemplo para envio na sexta-feira:
-        - sexta-feira + 2 dias = domingo;
-        - prazo ajustado para segunda-feira.
         """
 
         if data_envio is None:
@@ -113,15 +160,14 @@ def executar_processamento(evento_parar=None, callback_log=None):
 
         return data_retorno
 
-
     # ==========================================================
     # FUNÇÕES AUXILIARES
     # ==========================================================
 
     def gerar_id_email(tamanho=8):
         """
-        Gera um ID aleatório para localizar posteriormente
-        o e-mail no Outlook.
+        Gera um ID aleatório para identificar posteriormente
+        o e-mail enviado.
         """
 
         caracteres = (
@@ -136,11 +182,9 @@ def executar_processamento(evento_parar=None, callback_log=None):
             )
         )
 
-
     def limpar_nome_arquivo(nome):
         """
-        Remove caracteres inválidos para nomes de arquivos
-        no Windows.
+        Remove caracteres inválidos para nomes de arquivos.
         """
 
         nome_limpo = re.sub(
@@ -157,16 +201,21 @@ def executar_processamento(evento_parar=None, callback_log=None):
 
         return nome_limpo.rstrip(". ")
 
-
-
     # ==========================================================
     # CAMINHOS
     # ==========================================================
 
     if getattr(sys, "frozen", False):
-        BASE_DIR = Path(sys.executable).resolve().parent
+
+        BASE_DIR = Path(
+            sys.executable
+        ).resolve().parent
+
     else:
-        BASE_DIR = Path(__file__).resolve().parent
+
+        BASE_DIR = Path(
+            __file__
+        ).resolve().parent
 
     arquivo_excel = (
         BASE_DIR
@@ -220,7 +269,6 @@ def executar_processamento(evento_parar=None, callback_log=None):
         exist_ok=True,
     )
 
-
     # ==========================================================
     # VALIDAÇÕES
     # ==========================================================
@@ -243,14 +291,15 @@ def executar_processamento(evento_parar=None, callback_log=None):
             f"Imagem não encontrada: {simbolo_pequeno}"
         )
 
-    print(f"Pasta destino: {pasta_fornecedores}")
-    print(f"Pasta de logs: {pasta_log}")
-    print(f"Imagem principal: {imagem_claro}")
-    print(f"Símbolo pequeno: {simbolo_pequeno}")
-
+    informar(f"Pasta base: {BASE_DIR}")
+    informar(f"Arquivo de entrada: {arquivo_excel}")
+    informar(f"Pasta destino: {pasta_fornecedores}")
+    informar(f"Pasta de logs: {pasta_log}")
+    informar(f"Imagem principal: {imagem_claro}")
+    informar(f"Símbolo pequeno: {simbolo_pequeno}")
 
     # ==========================================================
-    # LISTA DE LOGS
+    # LISTAS DE CONTROLE
     # ==========================================================
 
     logs_execucao = []
@@ -266,12 +315,34 @@ def executar_processamento(evento_parar=None, callback_log=None):
         engine="openpyxl",
     )
 
-    print(
+    informar(
         f"Total de registros carregados: {len(df)}"
     )
 
+    colunas_obrigatorias = [
+        "Nº CONTA DO FORNECEDOR",
+        "EmailFornecedor",
+    ]
+
+    colunas_ausentes = [
+        coluna
+        for coluna in colunas_obrigatorias
+        if coluna not in df.columns
+    ]
+
+    if colunas_ausentes:
+
+        raise ValueError(
+            "As seguintes colunas obrigatórias não foram "
+            "encontradas no arquivo: "
+            + ", ".join(colunas_ausentes)
+        )
+
     data_tentativa = datetime.today()
-    data_tentativa_formt = data_tentativa.strftime("%d/%m/%Y")
+
+    data_tentativa_formatada = (
+        data_tentativa.strftime("%d/%m/%Y")
+    )
 
     # ==========================================================
     # PROCESSAMENTO DOS FORNECEDORES
@@ -285,15 +356,20 @@ def executar_processamento(evento_parar=None, callback_log=None):
         ):
 
             if parada_solicitada():
+
                 informar("")
                 informar("=" * 80)
-                informar("PROCESSAMENTO INTERROMPIDO PELO USUÁRIO")
+                informar(
+                    "PROCESSAMENTO INTERROMPIDO PELO USUÁRIO"
+                )
                 informar("=" * 80)
+
                 break
 
-            print("\n" + "=" * 80)
-            print(f"Fornecedor: {fornecedor}")
-            print(
+            informar("")
+            informar("=" * 80)
+            informar(f"Fornecedor: {fornecedor}")
+            informar(
                 f"Quantidade de linhas: {len(grupo)}"
             )
 
@@ -320,15 +396,18 @@ def executar_processamento(evento_parar=None, callback_log=None):
             # --------------------------------------------------
 
             email_fornecedor = ";".join(
-                    grupo["EmailFornecedor"]
-                    .dropna()
-                    .astype(str)
-                    .str.strip()
-                    .unique()
-                )
-        
+                grupo["EmailFornecedor"]
+                .dropna()
+                .astype(str)
+                .str.strip()
+                .loc[
+                    lambda serie:
+                    serie.ne("")
+                ]
+                .unique()
+            )
 
-            print(
+            informar(
                 "E-mails válidos encontrados: "
                 f"{email_fornecedor or 'Nenhum'}"
             )
@@ -378,13 +457,13 @@ def executar_processamento(evento_parar=None, callback_log=None):
                 not MODO_TESTE
                 and not email_fornecedor
             ):
-                trocar_corpo_msg = False
+
                 mensagem = (
                     "Fornecedor sem e-mail válido na base."
                 )
 
-                print(mensagem)
-            
+                informar(mensagem)
+
                 registrar_log(
                     lista_logs=logs_execucao,
                     fornecedor=fornecedor,
@@ -395,7 +474,9 @@ def executar_processamento(evento_parar=None, callback_log=None):
                     status_envio="NÃO ENVIADO",
                     motivo=mensagem,
                     quantidade_itens=len(grupo),
-                    data_tentiva = data_tentativa_formt,
+                    data_tentativa=(
+                        data_tentativa_formatada
+                    ),
                     data_envio=None,
                     data_retorno=data_retorno,
                 )
@@ -406,17 +487,18 @@ def executar_processamento(evento_parar=None, callback_log=None):
                 MODO_TESTE
                 and not email_fornecedor
             ):
-                trocar_corpo_msg = False
-                print(
+
+                informar(
                     "Aviso: fornecedor sem e-mail válido. "
-                    "A mensagem será direcionada apenas "
-                    "ao endereço de teste."
+                    "Como o modo de teste está ativo, a "
+                    "mensagem será enviada somente para o "
+                    "endereço de teste."
                 )
 
-            print(f"E-mail destino: {email_destino}")
-            print(f"ID do envio: {id_email}")
+            informar(f"E-mail destino: {email_destino}")
+            informar(f"ID do envio: {id_email}")
 
-            print(
+            informar(
                 "Data limite de retorno: "
                 f"{data_retorno_formatada}"
             )
@@ -429,11 +511,10 @@ def executar_processamento(evento_parar=None, callback_log=None):
                 columns=[
                     "EmailFornecedor",
                     "Previsão atual 1",
-                    "Previsão atual 2"
+                    "Previsão atual 2",
                 ],
                 errors="ignore",
             ).copy()
-
 
             # --------------------------------------------------
             # GERAÇÃO DO EXCEL
@@ -457,13 +538,16 @@ def executar_processamento(evento_parar=None, callback_log=None):
                     raise FileNotFoundError(
                         "O arquivo Excel não foi criado."
                     )
-                
+
                 destacar_coluna_excel(
                     caminho_arquivo=arquivo_fornecedor,
-                    nome_coluna="Previsão Atual(Preencha Aqui a nova data)"
+                    nome_coluna=(
+                        "Previsão Atual"
+                        "(Preencha Aqui a nova data)"
+                    ),
                 )
 
-                print(
+                informar(
                     f"Arquivo salvo: {arquivo_fornecedor}"
                 )
 
@@ -474,7 +558,7 @@ def executar_processamento(evento_parar=None, callback_log=None):
                     f"{erro}"
                 )
 
-                print(mensagem)
+                informar(mensagem)
 
                 registrar_log(
                     lista_logs=logs_execucao,
@@ -487,7 +571,9 @@ def executar_processamento(evento_parar=None, callback_log=None):
                     motivo=mensagem,
                     quantidade_itens=len(grupo),
                     caminho_arquivo=arquivo_excel,
-                    data_tentativa = data_tentativa_formt,
+                    data_tentativa=(
+                        data_tentativa_formatada
+                    ),
                     data_envio=None,
                     data_retorno=data_retorno,
                 )
@@ -503,142 +589,141 @@ def executar_processamento(evento_parar=None, callback_log=None):
             )
 
             corpo = f"""
-    <html>
-    <head>
-        <meta charset="UTF-8">
-    </head>
+<html>
+<head>
+    <meta charset="UTF-8">
+</head>
 
-    <body style="
-        margin: 0;
-        padding: 0;
-        font-family: Calibri, Arial, sans-serif;
-        font-size: 11pt;
-        color: #222222;
-    ">
+<body style="
+    margin: 0;
+    padding: 0;
+    font-family: Calibri, Arial, sans-serif;
+    font-size: 11pt;
+    color: #222222;
+">
 
-        <p>
-            <strong>Olá, tudo bem?</strong>
-        </p>
+    <p>
+        <strong>Olá, tudo bem?</strong>
+    </p>
 
-        <p>
-            Segue a carteira para atualização da previsão e
-            validação da última data informada.
-        </p>
+    <p>
+        Segue a carteira para atualização da previsão e
+        validação da última data informada.
+    </p>
 
-        <p>
-            Estamos acompanhando os itens com maior atraso e o
-            desempenho dos fornecedores. Por gentileza, informar
-            a justificativa dos pedidos em atraso e atualizar a
-            previsão de entrega dos pedidos na planilha anexa ou
-            no corpo do e-mail.
-        </p>
+    <p>
+        Estamos acompanhando os itens com maior atraso e o
+        desempenho dos fornecedores. Por gentileza, informar
+        a justificativa dos pedidos em atraso e atualizar a
+        previsão de entrega dos pedidos na planilha anexa ou
+        no corpo do e-mail.
+    </p>
 
-        <p>
-            Para os itens com entrega parcial, solicitamos o envio
-            do cronograma detalhado, com as quantidades pendentes
-            e respectivas datas previstas de entrega.
-        </p>
+    <p>
+        Para os itens com entrega parcial, solicitamos o envio
+        do cronograma detalhado, com as quantidades pendentes
+        e respectivas datas previstas de entrega.
+    </p>
 
-        <p>
-            <strong>
-                Pedimos o retorno até {data_retorno_formatada}.
-            </strong>
-        </p>
+    <p>
+        <strong>
+            Pedimos o retorno até {data_retorno_formatada}.
+        </strong>
+    </p>
 
-        <p>Obrigada!</p>
+    <p>Obrigada!</p>
 
-        <br>
+    <br>
 
-        <table
-            role="presentation"
-            cellpadding="0"
-            cellspacing="0"
-            border="0"
-            style="
-                border-collapse: collapse;
-                font-family: Calibri, Arial, sans-serif;
-                color: #222222;
-            "
-        >
-            <tr>
-                <td
-                    style="
-                        vertical-align: middle;
-                        padding-right: 14px;
-                    "
-                >
-                    <img src="cid:imagem_claro">
-                </td>
+    <table
+        role="presentation"
+        cellpadding="0"
+        cellspacing="0"
+        border="0"
+        style="
+            border-collapse: collapse;
+            font-family: Calibri, Arial, sans-serif;
+            color: #222222;
+        "
+    >
+        <tr>
+            <td style="
+                vertical-align: middle;
+                padding-right: 14px;
+            ">
+                <img src="cid:imagem_claro">
+            </td>
 
-                <td
-                    style="
-                        vertical-align: middle;
-                        font-size: 10pt;
-                        line-height: 1.25;
-                    "
-                >
-                    <div
+            <td style="
+                vertical-align: middle;
+                font-size: 10pt;
+                line-height: 1.25;
+            ">
+                <div style="
+                    font-size: 11pt;
+                    font-weight: bold;
+                    white-space: nowrap;
+                ">
+                    GICELIA SANTOS DE OLIVEIRA
+
+                    <img src="cid:simbolo_pequeno">
+                </div>
+
+                <div style="
+                    margin-top: 2px;
+                    font-size: 8pt;
+                    font-weight: bold;
+                ">
+                    ÁREA CORPORATIVA
+                </div>
+
+                <div>
+                    Logística | Planejamento de Materiais
+                </div>
+
+                <div>
+                    55 11 2612-2542
+                </div>
+
+                <div>
+                    <a
+                        href="mailto:gicelia.oliveira@claro.com.br"
                         style="
-                            font-size: 11pt;
-                            font-weight: bold;
-                            white-space: nowrap;
+                            color: #7A007A;
+                            text-decoration: underline;
                         "
                     >
-                        GICELIA SANTOS DE OLIVEIRA
+                        gicelia.oliveira@claro.com.br
+                    </a>
+                </div>
 
-                       <img src="cid:simbolo_pequeno">
-                    </div>
+                <div>
+                    Claro Brasil
+                </div>
 
-                    <div
+                <div>
+                    <a
+                        href="https://www.claro.com.br"
                         style="
-                            margin-top: 2px;
-                            font-size: 8pt;
-                            font-weight: bold;
+                            color: #7A007A;
+                            text-decoration: underline;
                         "
                     >
-                        ÁREA CORPORATIVA
-                    </div>
+                        www.claro.com.br
+                    </a>
+                </div>
+            </td>
+        </tr>
+    </table>
 
-                    <div>
-                        Logística | Planejamento de Materiais
-                    </div>
+    <!--
+        Fornecedor processado: {fornecedor_html}
+        Identificador do envio: {id_email}
+    -->
 
-                    <div>55 11 2612-2542</div>
-
-                    <div>
-                        <a
-                            href="mailto:gicelia.oliveira@claro.com.br"
-                            style="
-                                color: #7A007A;
-                                text-decoration: underline;
-                            "
-                        >
-                            gicelia.oliveira@claro.com.br
-                        </a>
-                    </div>
-
-                    <div>Claro Brasil</div>
-
-                    <div>
-                        <a
-                            href="https://www.claro.com.br"
-                            style="
-                                color: #7A007A;
-                                text-decoration: underline;
-                            "
-                        >
-                            www.claro.com.br
-                        </a>
-                    </div>
-                </td>
-            </tr>
-        </table>
-
-    </body>
-    </html>
-    """
-
-
+</body>
+</html>
+"""
 
             # --------------------------------------------------
             # ENVIO
@@ -647,7 +732,12 @@ def executar_processamento(evento_parar=None, callback_log=None):
             try:
 
                 if parada_solicitada():
-                    informar("Parada solicitada. O próximo e-mail não será iniciado.")
+
+                    informar(
+                        "Parada solicitada. O próximo e-mail "
+                        "não será iniciado."
+                    )
+
                     break
 
                 resultado_envio = enviar_email_com_anexo(
@@ -657,18 +747,16 @@ def executar_processamento(evento_parar=None, callback_log=None):
                     caminho_anexo=str(
                         arquivo_fornecedor
                     ),
-                    caminho_imagem_claro =str(
+                    caminho_imagem_claro=str(
                         imagem_claro
                     ),
-                    caminho_simbolo_pequeno = str(
+                    caminho_simbolo_pequeno=str(
                         simbolo_pequeno
                     ),
                     exibir_antes_de_enviar=(
                         EXIBIR_ANTES_DE_ENVIAR
                     ),
                 )
-
-            
 
                 if resultado_envio == "ENVIADO":
 
@@ -681,19 +769,14 @@ def executar_processamento(evento_parar=None, callback_log=None):
 
                     data_envio_log = datetime.now()
 
-                elif (
-                    resultado_envio
-                    == "ABERTO_PARA_REVISAO"
-                ):
+                elif resultado_envio == "ABERTO_PARA_REVISAO":
 
-                    status_envio = (
-                        "ABERTO PARA REVISÃO"
-                    )
+                    status_envio = "ABERTO PARA REVISÃO"
 
                     motivo = (
-                        "Mensagem aberta no Outlook. "
-                        "O Python não consegue confirmar "
-                        "se o envio manual foi realizado."
+                        "Mensagem aberta no Outlook para revisão. "
+                        "O Python não consegue confirmar se o envio "
+                        "manual foi realizado."
                     )
 
                     data_envio_log = None
@@ -701,7 +784,7 @@ def executar_processamento(evento_parar=None, callback_log=None):
                 else:
 
                     status_envio = "NÃO ENVIADO"
-               
+
                     motivo = (
                         "Resultado não reconhecido pela "
                         "função de envio: "
@@ -710,9 +793,7 @@ def executar_processamento(evento_parar=None, callback_log=None):
 
                     data_envio_log = None
 
-                print(motivo)
-
-           
+                informar(motivo)
 
                 registrar_log(
                     lista_logs=logs_execucao,
@@ -725,7 +806,9 @@ def executar_processamento(evento_parar=None, callback_log=None):
                     motivo=motivo,
                     quantidade_itens=len(grupo),
                     caminho_arquivo=arquivo_excel,
-                    data_tentativa = data_tentativa_formt,
+                    data_tentativa=(
+                        data_tentativa_formatada
+                    ),
                     data_envio=data_envio_log,
                     data_retorno=data_retorno,
                 )
@@ -733,21 +816,28 @@ def executar_processamento(evento_parar=None, callback_log=None):
                 # --------------------------------------------------
                 # CONTROLE DE REENVIO
                 # --------------------------------------------------
-                # Somente mensagens que NÃO foram enviadas entram na
-                # fila de reenvio.
-                #
-                # "ABERTO PARA REVISÃO" não entra na fila, pois o
-                # usuário pode enviar manualmente pelo Outlook.
+
                 if status_envio == "NÃO ENVIADO":
 
                     df_reenvio = grupo.copy()
 
                     df_reenvio["ID_EMAIL"] = id_email
-                    df_reenvio["STATUS_ENVIO"] = status_envio
-                    df_reenvio["DATA_ENVIO"] = data_envio_log
-                    df_reenvio["EMAIL_DESTINO"] = email_destino
 
-                    lista_reenvio.append(df_reenvio)
+                    df_reenvio[
+                        "STATUS_ENVIO"
+                    ] = status_envio
+
+                    df_reenvio[
+                        "DATA_ENVIO"
+                    ] = data_envio_log
+
+                    df_reenvio[
+                        "EMAIL_DESTINO"
+                    ] = email_destino
+
+                    lista_reenvio.append(
+                        df_reenvio
+                    )
 
             except Exception as erro:
 
@@ -755,7 +845,7 @@ def executar_processamento(evento_parar=None, callback_log=None):
                     f"Erro no envio do e-mail: {erro}"
                 )
 
-                print(mensagem)
+                informar(mensagem)
 
                 traceback.print_exc()
 
@@ -770,31 +860,42 @@ def executar_processamento(evento_parar=None, callback_log=None):
                     motivo=mensagem,
                     quantidade_itens=len(grupo),
                     caminho_arquivo=arquivo_excel,
-                    data_tentativa = data_tentativa_formt,
+                    data_tentativa=(
+                        data_tentativa_formatada
+                    ),
                     data_envio=None,
                     data_retorno=data_retorno,
                 )
 
-        # ------------------------------------------
+                df_reenvio = grupo.copy()
+
+                df_reenvio["ID_EMAIL"] = id_email
+
+                df_reenvio[
+                    "STATUS_ENVIO"
+                ] = "NÃO ENVIADO"
+
+                df_reenvio[
+                    "DATA_ENVIO"
+                ] = None
+
+                df_reenvio[
+                    "EMAIL_DESTINO"
+                ] = email_destino
+
+                lista_reenvio.append(
+                    df_reenvio
+                )
+
+        # ======================================================
         # SALVAR CONTROLE DE REENVIO
-        # ------------------------------------------
-        #
-        # IMPORTANTE:
-        # Esta etapa NÃO executa o reenvio.
-        # Ela apenas mantém uma fila de registros cujo envio
-        # não foi realizado, para que uma função de reenvio
-        # possa ser criada posteriormente.
-        #
-        # A base é tratada como FILA DE PENDÊNCIAS:
-        # - "NÃO ENVIADO" entra;
-        # - "ENVIADO" não entra;
-        # - "ABERTO PARA REVISÃO" não entra;
-        # - registros duplicados são removidos por ID_EMAIL.
+        # ======================================================
+
         if lista_reenvio:
 
             df_controle_novo = pd.concat(
                 lista_reenvio,
-                ignore_index=True
+                ignore_index=True,
             )
 
             if arquivo_reenvio.exists():
@@ -803,14 +904,15 @@ def executar_processamento(evento_parar=None, callback_log=None):
 
                     df_controle_antigo = pd.read_excel(
                         arquivo_reenvio,
-                        engine="openpyxl"
+                        engine="openpyxl",
                     )
 
                 except Exception as erro:
 
-                    print(
-                        "Aviso: não foi possível ler a base de reenvio "
-                        f"existente: {erro}"
+                    informar(
+                        "Aviso: não foi possível ler a base "
+                        "de reenvio existente: "
+                        f"{erro}"
                     )
 
                     df_controle_antigo = pd.DataFrame()
@@ -819,16 +921,14 @@ def executar_processamento(evento_parar=None, callback_log=None):
 
                 df_controle_antigo = pd.DataFrame()
 
-            # Junta as pendências antigas com as novas.
             df_controle = pd.concat(
                 [
                     df_controle_antigo,
-                    df_controle_novo
+                    df_controle_novo,
                 ],
-                ignore_index=True
+                ignore_index=True,
             )
 
-            # Remove registros que não deveriam permanecer na fila.
             if "STATUS_ENVIO" in df_controle.columns:
 
                 status_controle = (
@@ -843,82 +943,81 @@ def executar_processamento(evento_parar=None, callback_log=None):
                     status_controle.eq("NÃO ENVIADO")
                 ].copy()
 
-            # O mesmo ID_EMAIL representa uma única tentativa de envio.
-            # Portanto, não deve existir mais de um registro desse ID.
             if "ID_EMAIL" in df_controle.columns:
 
                 df_controle = (
                     df_controle
                     .drop_duplicates(
                         subset=["ID_EMAIL"],
-                        keep="last"
+                        keep="last",
                     )
                     .reset_index(drop=True)
                 )
 
-            # Garante que a pasta de log exista antes da gravação.
             arquivo_reenvio.parent.mkdir(
                 parents=True,
-                exist_ok=True
+                exist_ok=True,
             )
 
             df_controle.to_excel(
                 arquivo_reenvio,
                 engine="openpyxl",
-                index=False
+                index=False,
             )
 
-            print(
-                f"Controle de reenvio atualizado: "
+            informar(
+                "Controle de reenvio atualizado: "
                 f"{arquivo_reenvio}"
             )
 
-            print(
-                "Fornecedores/itens pendentes para reenvio: "
-                f"{len(df_controle)}"
+            informar(
+                "Fornecedores ou itens pendentes para "
+                f"reenvio: {len(df_controle)}"
             )
 
         else:
 
-            print(
-                "Nenhum novo e-mail não enviado para adicionar "
-                "à base de reenvio."
+            informar(
+                "Nenhum novo e-mail não enviado para "
+                "adicionar à base de reenvio."
             )
 
-            # Se a base já existir, não a apagamos e nem alteramos.
-            # Ela continua disponível para a futura função de reenvio.
             if arquivo_reenvio.exists():
 
                 try:
 
                     df_controle_existente = pd.read_excel(
                         arquivo_reenvio,
-                        engine="openpyxl"
+                        engine="openpyxl",
                     )
 
-                    print(
-                        "Pendências já existentes na base de reenvio: "
+                    informar(
+                        "Pendências já existentes na base "
+                        "de reenvio: "
                         f"{len(df_controle_existente)}"
                     )
 
                 except Exception as erro:
 
-                    print(
-                        "Não foi possível consultar a base de reenvio "
-                        f"existente: {erro}"
+                    informar(
+                        "Não foi possível consultar a base "
+                        "de reenvio existente: "
+                        f"{erro}"
                     )
-        
+
     finally:
 
-        # Garante que o histórico seja salvo mesmo se ocorrer
-        # uma falha inesperada durante o processamento.
+        # Garante a gravação dos logs mesmo quando ocorre
+        # uma falha inesperada.
         salvar_log_excel(
             lista_logs=logs_execucao,
             arquivo_log=arquivo_log,
         )
 
-
-    print("\nProcesso finalizado.")
+    informar("")
+    informar("=" * 80)
+    informar("PROCESSO FINALIZADO")
+    informar("=" * 80)
 
 
 if __name__ == "__main__":

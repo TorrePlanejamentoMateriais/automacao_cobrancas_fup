@@ -1,6 +1,4 @@
 pandas
-pyxlsb
-pywin32
 openpyxl
+pyxlsb
 pyarrow
-ttkbootstrap

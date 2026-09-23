@@ -1,0 +1,49 @@
+# Ambiente virtual
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+# Variáveis de ambiente
+.env
+.env.*
+
+# Logs
+log/
+logs/
+*.log
+
+# Build PyInstaller
+build/
+dist/
+*.spec
+
+# VS Code
+.vscode/
+
+# Arquivos temporários
+*.tmp
+*.temp
+
+# Excel temporário
+~$*.xlsx
+~$*.xlsm
+
+# Bases e respostas geradas pela automação
+base_fornecedores/*.xlsx
+base_fornecedores/*.xls
+respostas_fornecedores/*.xlsx
+respostas_fornecedores/*.xls
+
+# Cache
+.pytest_cache/
+.mypy_cache/
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
