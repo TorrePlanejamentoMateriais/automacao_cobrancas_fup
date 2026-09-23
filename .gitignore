@@ -39,6 +39,10 @@ base_fornecedores/*.xlsx
 base_fornecedores/*.xls
 respostas_fornecedores/*.xlsx
 respostas_fornecedores/*.xls
+data/raw/*.xlsx
+data/raw/*.xls
+data/cleansing/*.xlsx
+data/cleansing/*.xlsx
 
 # Cache
 .pytest_cache/
@@ -47,3 +51,4 @@ respostas_fornecedores/*.xls
 # Sistema operacional
 .DS_Store
 Thumbs.db
+
