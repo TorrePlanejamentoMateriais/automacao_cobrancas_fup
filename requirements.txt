@@ -1,0 +1,6 @@
+pandas
+pyxlsb
+pywin32
+openpyxl
+pyarrow
+ttkbootstrap
